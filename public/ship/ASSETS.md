@@ -191,5 +191,14 @@ Props ficam **ciano + metal neutro**. A cor por agente NÃO vem de `hue-rotate` 
 >
 > Para a mobília (living): mesmo cabeçalho "FRONT VIEW", lista = bunk bed, sofa, office desk, chair, bookshelf, plant, floor lamp, coffee dispenser, holo TV, coffee table, wardrobe, gym bench.
 
+# Robô 3-direcional (down/up/side) — regeração (ADR-0008 rev.)
+
+Substitui o sheet só-lateral. Movimento real em 2 eixos → robô precisa de **DOWN (frente) / UP (costas) / SIDE (perfil, espelhado p/ L↔R)**. Gerar em **2 sheets**, anexando o robô atual no ChatGPT ("mesmo robô exato") p/ consistência. Side nasce virado p/ **esquerda**; código espelha p/ direita.
+
+- **Sheet caminhada** `bot-walk-3dir.png` — grade **3×6** (linhas = down/up/side; colunas = 6 frames do ciclo).
+- **Sheet poses** `bot-pose-3dir.png` — grade **2×3** (linha 1 = idle, linha 2 = working; colunas = down/up/side).
+
+Código escolhe a direção pelo **eixo dominante**: `|dx|>|dy|` → SIDE (flip se `dx>0`); senão UP (`dy<0`) / DOWN (`dy>0`). **Plano B:** se os 18 frames de caminhada saírem incoerentes, gerar 1 sheet por direção (1×6) e juntar. Prompts completos versionados no histórico do chat / commit.
+
 ## Mapa de props por sala (provisório — afinar no mockup)
 No `_mockups/ship-render.html`, cada sala tem um array `props:[{f, x, y, w}]` (f=arquivo, x/y=centro em % da sala, w=largura em %). Sugestão inicial: NEXUS=server-rack+archive-console+office-desk; ARIA=radar-dish+antenna+bookshelf; ECHO=holo-desk+control-terminal+coffee-dispenser; FORGE=fabricator+pipes-vent+gym-bench; PHANTOM=archive-console+lockers+bunk-bed+plant. _(Removidos do mockup enquanto a leva frontal é regerada.)_

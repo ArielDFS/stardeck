@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NEXUS HUB — nave (render real + módulos por cima)</title>
+  <style>
+    :root {
+      --void: #050A14;
+      --border: #1E3A5F;
+      --muted: #5A7A94;
+      --text: #C9D6DF;
+      --cyan: #00F5FF;
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      background: var(--void);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    .space {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background:
+        radial-gradient(1200px 700px at 75% 10%, rgba(123, 47, 190, .30), transparent 60%),
+        radial-gradient(1000px 800px at 12% 90%, rgba(0, 80, 140, .30), transparent 60%), var(--void);
+    }
+
+    .stars {
+      position: fixed;
+      inset: -50%;
+      z-index: 0;
+      opacity: .5;
+      background-image:
+        radial-gradient(1.5px 1.5px at 20% 30%, #fff, transparent),
+        radial-gradient(1px 1px at 70% 60%, #cfe, transparent),
+        radial-gradient(1px 1px at 40% 80%, #fff, transparent),
+        radial-gradient(1.5px 1.5px at 85% 20%, #bdf, transparent),
+        radial-gradient(1px 1px at 55% 45%, #fff, transparent);
+      background-size: 340px 340px;
+      animation: drift 140s linear infinite;
+    }
+
+    @keyframes drift {
+      to {
+        transform: translate(-180px, -100px);
+      }
+    }
+
+    #fx {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .stage {
+      position: relative;
+      z-index: 2;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 14px;
+    }
+
+    /* nave = render real; aspect-ratio = imagem (1536x1024) p/ % baterem */
+    .ship {
+      position: relative;
+      flex: 1;
+      aspect-ratio: 1536/1024;
+      max-width: 96vw;
+      max-height: 78vh;
+      background: url("../public/ship/ship-render.png") center/contain no-repeat;
+      filter: drop-shadow(0 0 40px rgba(0, 80, 140, .35));
+      animation: fadeIn 1s ease-out both;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    /* módulo = APENAS a área (bounds) onde o robô perambula — invisível, sem contorno */
+    .module {
+      --accent: var(--cyan);
+      --hue: 0deg;
+      position: absolute;
+    }
+
+    .module.focused {
+      z-index: 5;
+    }
+
+
+    /* props de decoração (mobília/equipamento) — atrás do robô, nas bordas da sala */
+    .prop {
+      position: absolute;
+      height: auto;
+      transform: translate(-50%, -100%);
+      pointer-events: none;
+      z-index: 1;
+      filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .5));
+    }
+
+    /* ===== BUILD MODE (autoria de props com grid-snap) — tecla E ===== */
+    .grid {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      display: none;
+      background-image: linear-gradient(to right, rgba(0, 245, 255, .28) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 245, 255, .28) 1px, transparent 1px);
+    }
+
+    .ship.build .grid {
+      display: block;
+    }
+
+    .ship.build .unit {
+      pointer-events: none;
+    }
+
+    /* não focar agente sem querer */
+    .ship.build .prop {
+      pointer-events: auto;
+      cursor: grab;
+      outline: 1px dashed rgba(255, 255, 255, .4);
+    }
+
+    .ship.build .prop.dragging {
+      cursor: grabbing;
+      outline: 1px solid var(--cyan);
+      z-index: 9;
+    }
+
+    .build-panel {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 99;
+      display: none;
+      max-width: 340px;
+      background: rgba(5, 10, 20, .92);
+      border: 1px solid var(--cyan);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: 11px/1.55 Consolas, monospace;
+      color: #bdf;
+      white-space: pre-wrap;
+      box-shadow: 0 0 16px rgba(0, 245, 255, .3);
+    }
+
+    /* paleta de props (build mode) */
+    .palette {
+      position: fixed; top: 50%; right: 8px; transform: translateY(-50%); z-index: 99; display: none;
+      flex-direction: column; max-height: 92vh; overflow-y: auto; gap: 3px; padding: 6px;
+      background: rgba(5, 10, 20, .92); border: 1px solid var(--cyan); border-radius: 10px; box-shadow: 0 0 16px rgba(0, 245, 255, .3);
+    }
+    .pal-item {
+      display: flex; flex-direction: row; align-items: center; gap: 7px; width: 140px; cursor: grab; padding: 3px 5px; border-radius: 6px;
+    }
+    .pal-item:hover { background: rgba(0, 245, 255, .12); }
+    .pal-item img { width: 30px; height: 30px; object-fit: contain; pointer-events: none; flex: none; }
+    .pal-item span { font: 9px Consolas, monospace; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+    .prop-ghost { position: fixed; transform: translate(-50%, -100%); pointer-events: none; opacity: .8; z-index: 100; filter: drop-shadow(0 0 6px var(--cyan)); }
+
+    /* unit = robô + nome; move junto e é o ALVO DE CLIQUE */
+    .unit {
+      position: absolute;
+      cursor: pointer;
+      transition: left 1s linear, top 1s linear;
+      z-index: 2;
+    }
+
+    .unit .label {
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      margin-bottom: 5px;
+      font: 700 9px Consolas, monospace;
+      letter-spacing: .08em;
+      color: var(--accent);
+      white-space: nowrap;
+      pointer-events: none;
+      text-shadow: 0 0 6px color-mix(in srgb, var(--accent) 75%, transparent);
+      opacity: .6;
+      transition: opacity .3s;
+    }
+
+    .unit:hover .label,
+    .module.focused .label {
+      opacity: 1;
+    }
+
+    /* respiração sutil no idle */
+    .unit.idle {
+      animation: breathe 3.2s ease-in-out infinite;
+    }
+
+    @keyframes breathe {
+      50% {
+        transform: translateY(-1.5px);
+      }
+    }
+
+    /* balão de pensamento (...) — só no idle */
+    .unit .thought {
+      position: absolute;
+      left: 60%;
+      bottom: 62%;
+      display: flex;
+      gap: 2.5px;
+      align-items: center;
+      padding: 3px 5px 4px;
+      border-radius: 8px;
+      background: rgba(9, 18, 30, .92);
+      border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+      box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent);
+      opacity: 0;
+      transform: scale(.5);
+      transform-origin: bottom left;
+      transition: opacity .3s, transform .3s;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .unit .thought::after {
+      content: '';
+      position: absolute;
+      left: 3px;
+      bottom: -3px;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: rgba(9, 18, 30, .92);
+      border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+    }
+
+    .unit.idle .thought {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .thought i {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 4px var(--accent);
+      animation: think 1.4s ease-in-out infinite;
+    }
+
+    .thought i:nth-child(2) {
+      animation-delay: .18s;
+    }
+
+    .thought i:nth-child(3) {
+      animation-delay: .36s;
+    }
+
+    @keyframes think {
+
+      0%,
+      65%,
+      100% {
+        opacity: .25;
+        transform: translateY(0);
+      }
+
+      32% {
+        opacity: 1;
+        transform: translateY(-1.5px);
+      }
+    }
+
+    .particles {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .particles i {
+      position: absolute;
+      width: 2.5px;
+      height: 2.5px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 5px var(--accent);
+      opacity: 0;
+      animation: rise 4.2s linear infinite;
+    }
+
+    @keyframes rise {
+      0% {
+        transform: translateY(0) scale(.5);
+        opacity: 0;
+      }
+
+      18% {
+        opacity: .8;
+      }
+
+      100% {
+        transform: translateY(-40px) scale(1);
+        opacity: 0;
+      }
+    }
+
+    .module.focused .particles i {
+      animation-duration: 2.2s;
+      filter: brightness(1.4);
+    }
+
+    .unit .bot {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      background-repeat: no-repeat;
+      image-rendering: auto;
+      filter: hue-rotate(var(--hue)) drop-shadow(0 2px 3px rgba(0, 0, 0, .6));
+      transform: translate(-50%, -50%) scaleX(1);
+    }
+
+    .unit:hover .bot {
+      filter: hue-rotate(var(--hue)) drop-shadow(0 0 4px var(--accent)) drop-shadow(0 2px 3px rgba(0, 0, 0, .6));
+    }
+
+    /* contorno/glow EM VOLTA DO ROBÔ quando focado (segue a silhueta do sprite) */
+    .module.focused .bot {
+      filter: hue-rotate(var(--hue)) drop-shadow(0 0 5px var(--accent)) drop-shadow(0 0 11px color-mix(in srgb, var(--accent) 70%, transparent));
+      animation: botpulse 2.2s ease-in-out infinite;
+    }
+
+    @keyframes botpulse {
+      50% {
+        filter: hue-rotate(var(--hue)) drop-shadow(0 0 8px var(--accent)) drop-shadow(0 0 18px var(--accent));
+      }
+    }
+
+    .dock {
+      z-index: 3;
+      width: min(96vw, 1100px);
+      height: 118px;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(13, 27, 42, .95), rgba(5, 10, 20, .95));
+    }
+
+    .dock .bar {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--border);
+      font: 700 11px Consolas, monospace;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--da, var(--muted));
+    }
+
+    .dock .bar .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--da, var(--muted));
+      box-shadow: 0 0 8px var(--da, var(--muted));
+    }
+
+    .dock .out {
+      flex: 1;
+      overflow: auto;
+      padding: 8px 14px;
+      font: 13px/1.5 Consolas, monospace;
+      color: var(--text);
+      white-space: pre-wrap;
+    }
+
+    .dock .prompt {
+      display: flex;
+      gap: 8px;
+      padding: 6px 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .dock .prompt input {
+      flex: 1;
+      background: var(--void);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      padding: 5px 9px;
+      font: 12px Consolas, monospace;
+    }
+
+    .dock .prompt button {
+      background: var(--cyan);
+      color: var(--void);
+      border: none;
+      border-radius: 5px;
+      padding: 5px 14px;
+      font: 700 12px Consolas, monospace;
+      cursor: pointer;
+    }
+
+    .hint {
+      position: fixed;
+      bottom: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9;
+      font: 11px Consolas, monospace;
+      color: var(--muted);
+      opacity: .7;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="space"></div>
+  <div class="stars"></div>
+  <canvas id="fx"></canvas>
+
+  <div class="stage">
+    <div class="ship" id="ship"></div>
+    <div class="dock">
+      <div class="bar"><span class="dot"></span><span id="dockName">STA NDBY — clique num módulo</span></div>
+      <div class="out" id="out">Aguardando missão…</div>
+      <div class="prompt"><input id="promptInput" placeholder="Missão para o agente focado…" /><button
+          id="launchBtn">LANÇAR</button></div>
+    </div>
+  </div>
+  <div class="hint">Clique NO ROBÔ pra focar · contorno + nome seguem o robô · ajuste escala/caixas nos consts do topo
+    do script</div>
+
+  <script>
+    // ====== AJUSTES RÁPIDOS (robô direcional) ======
+    const CELL = 40;                       // exibição da célula do andar (px) — escala (MENOR = robô menor)
+    const POSE_CELL = Math.round(CELL * 1.116);// poses preenchem menos a célula -> exibir maior p/ casar a altura do andar
+    const WALK_COLS = 6, WALK_ROWS = 3;      // bot-walk-cut.png: 6 frames × 3 direções (linhas: down/up/side)
+    const POSE_COLS = 3, POSE_ROWS = 2;      // bot-pose-cut.png: 3 direções (colunas) × 2 poses (linhas: idle/working)
+    const WALK_FRAMES = 6;
+    const DIRIDX = { down: 0, up: 1, side: 2 };  // índice da direção (linha no walk / coluna no pose)
+    const WALK_SPEED = 0.04;               // %-do-modulo por ms (MENOR = mais devagar)
+    const FRAME_MS = 90, MIN_DUR = 600;
+    const ASSET = '../public/ship/';
+    const GRID_COLS = 8, GRID_ROWS = 6;      // BUILD MODE: grade de snap por sala (ajuste p/ alinhar ao piso)
+    const PROP_W = 48;                       // largura (px) padrão de fallback p/ um prop novo
+    const PROPS_LIST = ['antenna', 'archive-console', 'charging-pod', 'control-terminal', 'fabricator', 'holo-desk', 'lockers', 'pipes-vent', 'plant', 'radar-dish', 'reactor-core', 'server-rack', 'supply-crates'];
+    // largura (px) por prop — calculada pela proporção real p/ ter footprint coerente (planta pequena, lockers/desk maiores)
+    const PROP_SIZE = { plant: 24, 'charging-pod': 32, antenna: 38, 'server-rack': 42, 'archive-console': 42, 'reactor-core': 44, fabricator: 44, 'pipes-vent': 46, 'radar-dish': 46, 'supply-crates': 50, 'control-terminal': 50, 'holo-desk': 52, lockers: 56 };
+
+    // caixas das salas em % do render (l=left, t=top, w=width, h=height) — afinar olhando a nave
+    const ROOMS = [
+      {
+        name: 'NEXUS', accent: '#00F5FF', hue: '0deg', box: { l: 31, t: 17.5, w: 11, h: 14.5 },
+        props: [{ f: 'holo-desk', x: 60, y: 15, w: 64 }],
+        work: { x: 60, y: 33, dir: 'up' },
+        demo: 'Gerando query SQL…\n\nSELECT categoria, SUM(qtd) AS vendidos\nFROM order_items GROUP BY categoria\nORDER BY vendidos DESC LIMIT 10;'
+      },
+      {
+        name: 'ARIA', accent: '#7B2FBE', hue: '80deg', box: { l: 44, t: 20, w: 9, h: 13 },
+        props: [{ f: 'holo-desk', x: 50, y: -2, w: 64 }],
+        work: { x: 50, y: 22, dir: 'up' },
+        demo: 'Buscando na web…\n\n3 fontes encontradas → sintetizando.\nResultado consolidado pronto.'
+      },
+      {
+        name: 'ECHO', accent: '#FFD700', hue: '150deg', box: { l: 55, t: 20, w: 9, h: 13 },
+        props: [{ f: 'holo-desk', x: 45, y: 10, w: 64 }],
+        work: { x: 45, y: 25, dir: 'up' },
+        demo: 'Compilando relatório…\n\nReceita +18%. Top-3 SKUs = 42%.\nRealocar estoque p/ Vestuário.'
+      },
+      {
+        name: 'FORGE', accent: '#FF4C4C', hue: '190deg', box: { l: 31, t: 54, w: 10, h: 12 },
+        props: [{ f: 'holo-desk', x: 10, y: 2, w: 64 }],
+        work: { x: 11, y: 17, dir: 'up' },
+        demo: 'Construindo componente…\n\nexport function useCountdown(s){\n  const[t,setT]=useState(s); /* ... */ return t\n}'
+      },
+      {
+        name: 'PHANTOM', accent: '#9BD3E6', hue: '10deg', box: { l: 43, t: 54, w: 10, h: 12 },
+        props: [{ f: 'holo-desk', x: 25, y: 2, w: 64 }],
+        work: { x: 25, y: 15, dir: 'up' },
+        demo: 'Resumindo…\n\n• Tese em 1 linha.\n• 3 pontos de apoio.\n• Conclusão acionável.'
+      },
+    ];
+
+    // salas VAZIAS = zonas de chão só com grid (sem robô) — afina os boxes olhando a nave em build mode
+    const EMPTY_FLOORS = [
+      { l: 29, t: 38, w: 12, h: 11 }, { l: 44, t: 38, w: 20, h: 11 }, { l: 68, t: 38, w: 12, h: 11, clip: 'polygon(0 0, 80% 0, 100% 28%, 100% 72%, 80% 100%, 0 100%)' }, // proa: parede direita angulada
+      { l: 55, t: 54, w: 9, h: 11 },                                                                            // base, à direita de PHANTOM
+    ];
+
+    const ship = document.getElementById('ship'), out = document.getElementById('out'),
+      dockName = document.getElementById('dockName'), dockBar = document.querySelector('.dock .bar');
+    let focused = null, typer = null;
+    const modules = [];   // todas as zonas de chão (salas de agente + vazias) — alvo de drop de props
+
+    ROOMS.forEach((a, idx) => {
+      const m = document.createElement('div'); m.className = 'module';
+      m.style.setProperty('--accent', a.accent); m.style.setProperty('--hue', a.hue);
+      m.style.left = a.box.l + '%'; m.style.top = a.box.t + '%'; m.style.width = a.box.w + '%'; m.style.height = a.box.h + '%';
+      m.innerHTML = `<div class="grid"></div>`
+        + `<div class="particles">${'<i></i>'.repeat(5)}</div>`
+        + `<div class="unit"><span class="label">${a.name}</span><div class="thought"><i></i><i></i><i></i></div><div class="bot"></div></div>`;
+      m.querySelectorAll('.particles i').forEach(p => { p.style.left = (15 + Math.random() * 70) + '%'; p.style.top = (40 + Math.random() * 50) + '%'; p.style.animationDelay = (Math.random() * 4.2) + 's'; });
+      const gridEl = m.querySelector('.grid');
+      gridEl.style.backgroundSize = `${100 / GRID_COLS}% 100%, 100% ${100 / GRID_ROWS}%`;
+      if (a.clip) gridEl.style.clipPath = a.clip;                 // recorte p/ salas irregulares
+      m._name = a.name; m._props = (a.props = a.props || []); modules.push(m);
+      m._props.forEach(p => makeProp(m, p));
+      const unit = m.querySelector('.unit'), bot = m.querySelector('.bot');
+      unit.style.width = CELL + 'px'; unit.style.height = CELL + 'px'; unit.style.marginLeft = (-CELL / 2) + 'px'; unit.style.marginTop = (-CELL / 2) + 'px';
+      bot._dir = 'down'; bot._flip = false; bot._frame = 0; bot._timer = null; bot._unit = unit;
+      unit.addEventListener('click', e => { e.stopPropagation(); focus(m, unit, bot, a); });
+      ship.appendChild(m); wander(m, unit, bot); showIdle(bot);
+    });
+
+    // zonas de chão vazias (grid + podem receber props)
+    EMPTY_FLOORS.forEach((box, i) => {
+      const m = document.createElement('div'); m.className = 'module';
+      m.style.left = box.l + '%'; m.style.top = box.t + '%'; m.style.width = box.w + '%'; m.style.height = box.h + '%';
+      m.innerHTML = `<div class="grid"></div>`;
+      const g = m.querySelector('.grid');
+      g.style.backgroundSize = `${100 / GRID_COLS}% 100%, 100% ${100 / GRID_ROWS}%`;
+      if (box.clip) g.style.clipPath = box.clip;                  // recorte p/ salas irregulares
+      m._name = 'FLOOR-' + (i + 1); m._props = (box.props = box.props || []); modules.push(m);
+      m._props.forEach(p => makeProp(m, p));
+      ship.appendChild(m);
+    });
+
+    // cria um elemento de prop e o vincula ao seu dado/módulo
+    function makeProp(m, p) {
+      const el = document.createElement('img'); el.className = 'prop'; el.src = ASSET + 'props/' + p.f + '.png';
+      el.style.left = p.x + '%'; el.style.top = p.y + '%'; el.style.width = p.w + 'px';
+      el._p = p; el._m = m; m.appendChild(el); return el;
+    }
+    // módulo (zona de chão) sob um ponto da tela
+    function moduleAt(cx, cy) {
+      for (let i = modules.length - 1; i >= 0; i--) {
+        const r = modules[i].getBoundingClientRect();
+        if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) return modules[i];
+      }
+      return null;
+    }
+
+    // side nasce virado p/ ESQUERDA -> flip quando vai p/ direita
+    function applyFlip(bot) { bot.style.transform = `translate(-50%,-50%) scaleX(${(bot._dir === 'side' && bot._flip) ? -1 : 1})`; }
+    function setWalkCell(bot) { bot.style.backgroundPosition = `${-bot._frame * CELL}px ${-DIRIDX[bot._dir] * CELL}px`; }
+    function startWalkAnim(bot) { if (bot._timer) return; bot._timer = setInterval(() => { bot._frame = (bot._frame + 1) % WALK_FRAMES; setWalkCell(bot); }, FRAME_MS); }
+    function stopWalkAnim(bot) { clearInterval(bot._timer); bot._timer = null; bot._frame = 0; }
+    function showWalk(bot) {
+      bot._unit.classList.remove('idle');
+      bot.style.backgroundImage = `url(${ASSET}bot-walk-cut.png)`;
+      bot.style.width = CELL + 'px'; bot.style.height = CELL + 'px';
+      bot.style.backgroundSize = `${WALK_COLS * CELL}px ${WALK_ROWS * CELL}px`;
+      applyFlip(bot); setWalkCell(bot); startWalkAnim(bot);
+    }
+    function showPose(bot, poseRow) {   // 0 = idle, 1 = working — célula própria p/ casar a escala do andar
+      stopWalkAnim(bot);
+      bot.style.backgroundImage = `url(${ASSET}bot-pose-cut.png)`;
+      bot.style.width = POSE_CELL + 'px'; bot.style.height = POSE_CELL + 'px';
+      bot.style.backgroundSize = `${POSE_COLS * POSE_CELL}px ${POSE_ROWS * POSE_CELL}px`;
+      bot.style.backgroundPosition = `${-DIRIDX[bot._dir] * POSE_CELL}px ${-poseRow * POSE_CELL}px`;
+      applyFlip(bot);
+    }
+    function showIdle(bot) { bot.classList.remove('working'); bot._unit.classList.add('idle'); showPose(bot, 0); }
+    function showWorking(bot) { bot.classList.add('working'); bot._unit.classList.remove('idle'); showPose(bot, 1); }
+
+    function moveUnit(unit, bot, x, y, dur) {
+      const cx = parseFloat(unit.style.left) || 50, cy = parseFloat(unit.style.top) || 60;
+      const dx = x - cx, dy = y - cy;
+      if (Math.abs(dx) >= Math.abs(dy)) { bot._dir = 'side'; bot._flip = dx > 0; }  // eixo dominante horizontal
+      else { bot._dir = dy < 0 ? 'up' : 'down'; bot._flip = false; }                // vertical
+      if (dur == null) { const d = Math.hypot(dx, dy); dur = Math.max(MIN_DUR, d / WALK_SPEED); }
+      showWalk(bot); unit.style.transition = `left ${dur}ms linear, top ${dur}ms linear`;
+      unit.style.left = x + '%'; unit.style.top = y + '%';
+      setTimeout(() => { if (!bot.classList.contains('working')) showIdle(bot); }, dur);
+      return dur;
+    }
+    function wander(m, unit, bot) {
+      unit.style.left = '50%'; unit.style.top = '62%';
+      (function tick() {
+        if (!m.classList.contains('focused')) { const x = 18 + Math.random() * 64, y = 42 + Math.random() * 40; moveUnit(unit, bot, x, y); }
+        setTimeout(tick, 2600 + Math.random() * 4200);
+      })();
+    }
+    function focus(m, unit, bot, a) {
+      document.querySelectorAll('.module').forEach(x => x.classList.remove('focused'));
+      if (focused && focused.bot !== bot) showIdle(focused.bot);
+      m.classList.add('focused'); focused = { a, bot };
+      const w = a.work || { x: 50, y: 28, dir: 'up' };
+      const d = moveUnit(unit, bot, w.x, w.y);
+      setTimeout(() => { bot._dir = w.dir || 'up'; bot._flip = !!w.flip; applyFlip(bot); showWorking(bot); }, d + 20);
+      dockBar.style.setProperty('--da', a.accent); dockName.textContent = a.name + ' — PROCESSANDO'; stream(a);
+    }
+    function stream(a) {
+      clearInterval(typer); out.textContent = ''; let i = 0; const t = a.demo;
+      typer = setInterval(() => {
+        if (i >= t.length) { clearInterval(typer); dockName.textContent = a.name + ' — COMPLETED  (+' + (60 + Math.floor(Math.random() * 90)) + ' XP)'; return; }
+        out.textContent += t[i++]; out.scrollTop = out.scrollHeight;
+      }, 14);
+    }
+    document.getElementById('launchBtn').onclick = () => { if (focused) stream(focused.a); };
+    document.getElementById('promptInput').addEventListener('keydown', e => { if (e.key === 'Enter' && focused) stream(focused.a); });
+
+    // ===== BUILD MODE (autoria de props com grid-snap) — tecla E =====
+    let BUILD = false, drag = null, spawn = null, ghost = null;
+    const panel = document.createElement('div'); panel.className = 'build-panel'; document.body.appendChild(panel);
+    const snap = (v, n) => { const cell = 100 / n; let i = Math.round(v / cell - 0.5); i = Math.max(0, Math.min(n - 1, i)); return +((i + 0.5) * cell).toFixed(1); };
+    const pctIn = (m, cx, cy) => { const r = m.getBoundingClientRect(); return { x: (cx - r.left) / r.width * 100, y: (cy - r.top) / r.height * 100 }; };
+    function dumpProps() {
+      panel.textContent = '[BUILD] E=sair · arraste props · solte FORA p/ apagar · paleta embaixo (snap ' + GRID_COLS + '×' + GRID_ROWS + ')\n\n'
+        + modules.filter(m => m._props && m._props.length).map(m => `${m._name}: [` + m._props.map(p => `{f:'${p.f}',x:${p.x},y:${p.y},w:${p.w}}`).join(', ') + ']').join('\n');
+    }
+
+    // paleta com TODOS os props disponíveis
+    const palette = document.createElement('div'); palette.className = 'palette'; document.body.appendChild(palette);
+    const moveGhost = (x, y) => { if (ghost) { ghost.style.left = x + 'px'; ghost.style.top = y + 'px'; } };
+    PROPS_LIST.forEach(f => {
+      const it = document.createElement('div'); it.className = 'pal-item'; it.title = f;
+      it.innerHTML = `<img src="${ASSET}props/${f}.png"><span>${f}</span>`;
+      it.addEventListener('mousedown', e => {
+        if (!BUILD) return; e.preventDefault();
+        spawn = f; ghost = document.createElement('img'); ghost.className = 'prop-ghost';
+        ghost.src = ASSET + 'props/' + f + '.png'; ghost.style.width = (PROP_SIZE[f] || PROP_W) + 'px'; document.body.appendChild(ghost);
+        moveGhost(e.clientX, e.clientY);
+      });
+      palette.appendChild(it);
+    });
+
+    addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT') return;
+      if (e.key === 'e' || e.key === 'E') { BUILD = !BUILD; ship.classList.toggle('build', BUILD); panel.style.display = BUILD ? 'block' : 'none'; palette.style.display = BUILD ? 'flex' : 'none'; if (BUILD) dumpProps(); }
+    });
+    document.addEventListener('mousedown', e => {
+      if (!BUILD || spawn) return; const el = e.target.closest('.prop'); if (!el) return;
+      e.preventDefault(); e.stopPropagation(); drag = el; el.classList.add('dragging');
+    });
+    document.addEventListener('mousemove', e => {
+      if (spawn) { moveGhost(e.clientX, e.clientY); return; }
+      if (!drag) return; const p = pctIn(drag._m, e.clientX, e.clientY);
+      drag.style.left = p.x.toFixed(1) + '%'; drag.style.top = p.y.toFixed(1) + '%';
+    });
+    document.addEventListener('mouseup', e => {
+      const mt = moduleAt(e.clientX, e.clientY);
+      if (spawn) {                                   // soltar item da paleta numa sala
+        if (mt) { const pos = pctIn(mt, e.clientX, e.clientY); const p = { f: spawn, x: snap(pos.x, GRID_COLS), y: snap(pos.y, GRID_ROWS), w: (PROP_SIZE[spawn] || PROP_W) }; mt._props.push(p); makeProp(mt, p); dumpProps(); }
+        ghost.remove(); ghost = null; spawn = null; return;
+      }
+      if (!drag) return;
+      if (!mt) {                                     // soltou fora de qualquer sala -> apaga
+        const i = drag._m._props.indexOf(drag._p); if (i >= 0) drag._m._props.splice(i, 1);
+        drag.remove(); drag = null; dumpProps(); return;
+      }
+      if (mt !== drag._m) {                           // mudou de sala -> re-parent
+        const i = drag._m._props.indexOf(drag._p); if (i >= 0) drag._m._props.splice(i, 1);
+        mt._props.push(drag._p); mt.appendChild(drag); drag._m = mt;
+      }
+      const pos = pctIn(mt, e.clientX, e.clientY); const sx = snap(pos.x, GRID_COLS), sy = snap(pos.y, GRID_ROWS);
+      drag.style.left = sx + '%'; drag.style.top = sy + '%'; drag._p.x = sx; drag._p.y = sy;
+      drag.classList.remove('dragging'); drag = null; dumpProps();
+    });
+  </script>
+
+  <script>
+    // ===== FX externos: starfield em movimento + jatos dos propulsores =====
+    (function () {
+      // ---- AJUSTES ----
+      const NSTARS = 300;                 // qtd de estrelas
+      const STAR_SPEED = 0.6;            // velocidade base (MAIOR = mais rápido)
+      const THRUSTERS = [{ x: 10, y: 15 }, { x: 7, y: 71 }];  // posição das naceles em % do render (afinar)
+      const JET_PER_FRAME = 4;            // densidade do jato por nacele
+
+      const cv = document.getElementById('fx'), ctx = cv.getContext('2d'), shipEl = document.getElementById('ship');
+      let W, H, DPR;
+      function resize() { DPR = Math.min(2, window.devicePixelRatio || 1); cv.width = innerWidth * DPR; cv.height = innerHeight * DPR; W = cv.width; H = cv.height; cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px'; }
+      addEventListener('resize', resize); resize();
+
+      const COLORS = ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#bfe9ff', '#cda6ff', '#ffe7a6', '#ffb3da'];
+      const rnd = (a, b) => a + Math.random() * (b - a);
+      const stars = [];
+      function mkStar(atRight) {
+        return {
+          x: atRight ? W + 2 : Math.random() * W, y: Math.random() * H,
+          z: rnd(0.3, 2), r: rnd(0.4, 1.6) * DPR, c: COLORS[Math.random() * COLORS.length | 0]
+        };
+      }
+      for (let i = 0; i < NSTARS; i++) stars.push(mkStar(false));
+
+      const jets = [];
+      let last = performance.now();
+      function frame(now) {
+        const dt = Math.min(50, now - last); last = now;
+        ctx.clearRect(0, 0, W, H);
+
+        // nave: flutuação (bob) — congela em build mode p/ arrastar estável
+        if (!shipEl.classList.contains('build')) { const bob = Math.sin(now * 0.0011) * 3.5; shipEl.style.transform = `translateY(${bob.toFixed(2)}px)`; }
+
+        // estrelas: direita -> esquerda (parallax)
+        for (const s of stars) {
+          s.x -= s.z * dt * STAR_SPEED * DPR;
+          if (s.x < -3) { Object.assign(s, mkStar(true)); }
+          ctx.globalAlpha = 0.45 + s.z * 0.22;
+          ctx.fillStyle = s.c;
+          ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 7); ctx.fill();
+          if (s.z > 1.3) { ctx.globalAlpha *= 0.22; ctx.fillRect(s.x, s.y - s.r * 0.4, s.z * 5 * DPR, s.r * 0.8); } // rastro
+        }
+        ctx.globalAlpha = 1;
+
+        // jatos dos propulsores (aditivo p/ glow)
+        const r = shipEl.getBoundingClientRect();
+        for (const t of THRUSTERS) {
+          const ox = (r.left + t.x / 100 * r.width) * DPR, oy = (r.top + t.y / 100 * r.height) * DPR;
+          for (let k = 0; k < JET_PER_FRAME; k++)
+            jets.push({ x: ox, y: oy + rnd(-6, 6) * DPR, vx: -rnd(2.2, 5) * DPR, vy: rnd(-.4, .4) * DPR, life: 1, r: rnd(1.4, 3.2) * DPR });
+        }
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = jets.length - 1; i >= 0; i--) {
+          const j = jets[i];
+          j.x += j.vx * dt * 0.1; j.y += j.vy * dt * 0.1; j.life -= dt * 0.0017;
+          if (j.life <= 0) { jets.splice(i, 1); continue; }
+          ctx.globalAlpha = Math.max(0, j.life);
+          ctx.fillStyle = j.life > 0.6 ? '#cffaff' : (j.life > 0.32 ? '#00F5FF' : '#0a78ff');
+          ctx.beginPath(); ctx.arc(j.x, j.y, j.r * (0.4 + j.life * 0.8), 0, 7); ctx.fill();
+        }
+        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+
+</html>
