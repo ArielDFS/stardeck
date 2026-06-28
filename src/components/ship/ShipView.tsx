@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMission } from "@/hooks/useMission";
 import { useShipStore } from "@/store/shipStore";
 import { useRosterStore, SHIP_CELLS, byCell } from "@/store/rosterStore";
@@ -8,12 +8,14 @@ import { useProfileStore } from "@/store/profileStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useHydrated } from "@/hooks/useHydrated";
 import { levelForXp, levelProgress } from "@/lib/gamification/levels";
-import { ROOMS, SHIP_ASPECT } from "@/lib/ship/rooms";
+import { ROOMS } from "@/lib/ship/rooms";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { Manifesto } from "@/components/hud/Manifesto";
 import { XPRewardToast, type ToastReward } from "@/components/hud/XPRewardToast";
 import { SpaceBackground } from "./SpaceBackground";
 import { ShipFX } from "./ShipFX";
-import { ShipRoom } from "./ShipRoom";
+import { ShipRoom, type ReactionSignal } from "./ShipRoom";
+import { REACTION_EMOJI } from "@/lib/ship/expressions";
 import { RoomDecor } from "./RoomDecor";
 import { ShipBuilder } from "./ShipBuilder";
 import { AgentCard } from "./AgentCard";
@@ -37,6 +39,22 @@ export function ShipView() {
   const mission = useMission();
   const [reward, setReward] = useState<ToastReward | null>(null);
   const shipRef = useRef<HTMLDivElement>(null);
+
+  // dica de horizontal: só em retrato + touch, dismissível, some na paisagem (ADR-0014).
+  const portraitTouch = useMediaQuery("(pointer: coarse) and (orientation: portrait)");
+  const [hintDismissed, setHintDismissed] = useState(false);
+  const showRotateHint = portraitTouch && !hintDismissed;
+
+  // ===== Reações (ADR-0013): o ShipView é o maestro de emoji por evento =====
+  const [reactSig, setReactSig] = useState<
+    ({ slug: string } & ReactionSignal) | null
+  >(null);
+  const nonceRef = useRef(0);
+  const justLeveledRef = useRef(false);
+  const fire = useCallback((slug: string, emoji: string) => {
+    nonceRef.current += 1;
+    setReactSig({ slug, emoji, nonce: nonceRef.current });
+  }, []);
 
   // >1 = nave mais espaçosa → sprites/props encolhem (scale < 1).
   const scale = 1 / shipZoom;
@@ -65,6 +83,32 @@ export function ShipView() {
     const slug = createAgent(cell);
     if (slug) editAgent(slug);
   };
+
+  // Reação ao focar (👋) — pula o foco inicial do load.
+  const firstFocus = useRef(true);
+  useEffect(() => {
+    if (firstFocus.current) {
+      firstFocus.current = false;
+      return;
+    }
+    if (focusedSlug) fire(focusedSlug, REACTION_EMOJI.focus);
+  }, [focusedSlug, fire]);
+
+  // Reação por transição de Atividade da missão (início/fim/erro).
+  const prevStatus = useRef(mission.status);
+  useEffect(() => {
+    const s = mission.status;
+    const slug = mission.agentSlug;
+    if (s !== prevStatus.current && slug) {
+      if (s === "PROCESSING") fire(slug, REACTION_EMOJI.missionStart);
+      else if (s === "COMPLETED") {
+        // level-up (🎉) já disparou no onComplete e tem prioridade sobre o ✅.
+        if (justLeveledRef.current) justLeveledRef.current = false;
+        else fire(slug, REACTION_EMOJI.missionDone);
+      } else if (s === "ERROR") fire(slug, REACTION_EMOJI.missionError);
+    }
+    prevStatus.current = s;
+  }, [mission.status, mission.agentSlug, fire]);
 
   // tecla M abre/fecha o Manifesto (ignora quando digitando num campo).
   useEffect(() => {
@@ -105,7 +149,7 @@ export function ShipView() {
         </div>
 
         <div className="flex items-center gap-4">
-          {/* agente focado + Atividade */}
+          {/* agente focado + Atividade (texto some em telas estreitas — ADR-0014) */}
           <div className="flex items-center gap-2">
             <span
               className={`h-1.5 w-1.5 rounded-full ${focusedWorking ? "animate-pulse" : ""}`}
@@ -115,12 +159,12 @@ export function ShipView() {
               }}
             />
             <span
-              className="font-display text-[11px] tracking-[0.14em]"
+              className="hidden font-display text-[11px] tracking-[0.14em] sm:inline"
               style={{ color: focusedAgent.accentColor }}
             >
               {focusedAgent.name}
             </span>
-            <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-text-muted">
+            <span className="hidden font-mono text-[9px] uppercase tracking-[0.12em] text-text-muted sm:inline">
               {focusedWorking ? "em missão" : "focado"}
             </span>
           </div>
@@ -148,16 +192,8 @@ export function ShipView() {
       <Manifesto workingSlug={workingSlug} />
 
       {/* convés — a nave (render real) com as salas por cima */}
-      <section className="relative z-10 flex flex-1 items-center justify-center overflow-hidden p-2">
-        <div
-          ref={shipRef}
-          className={`ship-bg ${buildMode ? "build" : ""}`}
-          style={{
-            aspectRatio: SHIP_ASPECT,
-            height: "100%",
-            maxWidth: "100%",
-          }}
-        >
+      <section className="ship-stage relative z-10 flex flex-1 items-center justify-center overflow-hidden p-2">
+        <div ref={shipRef} className={`ship-bg ${buildMode ? "build" : ""}`}>
           {/* decoração (grid + props) — todas as salas, atrás dos robôs */}
           {ROOMS.map((room, i) => (
             <RoomDecor key={`decor-${i}`} cell={i} box={room.box} scale={scale} />
@@ -178,6 +214,7 @@ export function ShipView() {
                   isWorking={isWorking(agent.slug)}
                   onSelect={setFocus}
                   scale={scale}
+                  reaction={reactSig?.slug === agent.slug ? reactSig : null}
                 />
               );
             }
@@ -213,6 +250,18 @@ export function ShipView() {
             />
           )}
         </div>
+
+        {/* dica de horizontal (retrato + touch) — some sozinha na paisagem */}
+        {showRotateHint && (
+          <button
+            type="button"
+            onClick={() => setHintDismissed(true)}
+            className="absolute bottom-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-cyan/40 bg-void/85 px-3 py-1.5 font-mono text-[10px] tracking-wide text-text-muted backdrop-blur-sm"
+          >
+            <span className="text-cyan">↻</span> melhor na horizontal
+            <span className="text-text-dim">· toque p/ fechar</span>
+          </button>
+        )}
       </section>
 
       {/* console docado + prompt pequeno */}
@@ -237,6 +286,11 @@ export function ShipView() {
                 onComplete: ({ durationMs }) => {
                   const r = recordMission(focusedAgent, durationMs);
                   setReward({ ...r, id: Date.now() });
+                  // level-up (🎉) tem prioridade sobre o ✅ de fim de missão.
+                  if (r.leveledUp) {
+                    justLeveledRef.current = true;
+                    fire(focusedAgent.slug, REACTION_EMOJI.levelUp);
+                  }
                 },
               })
             }

@@ -49,9 +49,17 @@ export const POSE_COLS = 3;
 export const POSE_ROWS = 2;
 export const WALK_FRAMES = 6;
 export const DIRIDX: Record<BotDir, number> = { down: 0, up: 1, side: 2 };
-export const WALK_SPEED = 0.04; // %-do-módulo por ms
-export const FRAME_MS = 90;
-export const MIN_DUR = 600;
+
+// ===== locomoção (ADR-0012: loop rAF, cadência por distância) =====
+/** Velocidade de cruzeiro do robô, em **pixels de tela por segundo**. */
+export const SPEED_PX_S = 55;
+/** Distância (px reais) percorrida por **frame** do ciclo de caminhada — o pé
+ * "agarra o chão": cadência por distância, não por tempo. Menor = pernas mais
+ * rápidas. */
+export const STRIDE_PX = 8;
+/** Duração da rampa de aceleração/frenagem (ms) em cada ponta do trajeto
+ * (perfil trapezoidal). Fixa, independente da distância. */
+export const ACCEL_MS = 180;
 
 export const WALK_SHEET = "/ship/bot-walk-cut.png";
 export const POSE_SHEET = "/ship/bot-pose-cut.png";

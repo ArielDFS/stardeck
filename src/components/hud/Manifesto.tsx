@@ -8,6 +8,7 @@ import {
   useRosterStore, SHIP_CELLS, byCell, ZOOM_STEP, ZOOM_MIN, ZOOM_MAX,
 } from "@/store/rosterStore";
 import { hueRotateDeg } from "@/lib/ship/recolor";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { AgentEditor } from "@/components/ship/AgentEditor";
 import { TopHUD } from "./TopHUD";
 import { ByokKey } from "./ByokKey";
@@ -45,6 +46,9 @@ export function Manifesto({ workingSlug }: ManifestoProps) {
   const createAgent = useRosterStore((s) => s.createAgent);
   const shipZoom = useRosterStore((s) => s.shipZoom);
   const setShipZoom = useRosterStore((s) => s.setShipZoom);
+
+  // build mode usa drag de mouse → escondido no touch (ADR-0014).
+  const coarsePointer = useMediaQuery("(pointer: coarse)");
 
   // Esc: na edição volta pra lista; na lista fecha o Manifesto.
   useEffect(() => {
@@ -292,18 +296,20 @@ export function Manifesto({ workingSlug }: ManifestoProps) {
                     </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={toggleBuild}
-                    className="rounded border px-2.5 py-1 font-display text-[9px] tracking-[0.12em] transition"
-                    style={{
-                      borderColor: buildMode ? "#00F5FF" : "#1E3A5F",
-                      color: buildMode ? "#00F5FF" : "#5A7A94",
-                      boxShadow: buildMode ? "0 0 12px #00F5FF55" : undefined,
-                    }}
-                  >
-                    {buildMode ? "✓ CUSTOMIZANDO" : "CUSTOMIZAR"}
-                  </button>
+                  {!coarsePointer && (
+                    <button
+                      type="button"
+                      onClick={toggleBuild}
+                      className="rounded border px-2.5 py-1 font-display text-[9px] tracking-[0.12em] transition"
+                      style={{
+                        borderColor: buildMode ? "#00F5FF" : "#1E3A5F",
+                        color: buildMode ? "#00F5FF" : "#5A7A94",
+                        boxShadow: buildMode ? "0 0 12px #00F5FF55" : undefined,
+                      }}
+                    >
+                      {buildMode ? "✓ CUSTOMIZANDO" : "CUSTOMIZAR"}
+                    </button>
+                  )}
 
                   <ByokKey placement="up" />
                 </div>

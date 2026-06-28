@@ -1,14 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentInstance } from "@/types/agent";
 import type { BotDir, RoomDef } from "@/lib/ship/rooms";
 import {
   CELL, POSE_CELL, WALK_COLS, WALK_ROWS, POSE_COLS, POSE_ROWS,
-  WALK_FRAMES, DIRIDX, WALK_SPEED, FRAME_MS, MIN_DUR,
+  WALK_FRAMES, DIRIDX, SPEED_PX_S, STRIDE_PX, ACCEL_MS,
   WALK_SHEET, POSE_SHEET,
 } from "@/lib/ship/rooms";
 import { hueRotateDeg } from "@/lib/ship/recolor";
+import { roleGlyph, twemojiUrl, IDLE_LOOK, IDLE_DOZE } from "@/lib/ship/expressions";
+
+/** Sinal de Reação efêmera vindo do maestro (ShipView). `nonce` força reanimar. */
+export interface ReactionSignal {
+  emoji: string;
+  nonce: number;
+}
 
 interface ShipRoomProps {
   agent: AgentInstance;
@@ -18,19 +25,40 @@ interface ShipRoomProps {
   onSelect: (slug: string) => void;
   /** Escala do robô (1 = normal; <1 encolhe — "mais espaço"). */
   scale: number;
+  /** Reação (emoji) a tocar na bolha; null = nenhuma (ADR-0013). */
+  reaction: ReactionSignal | null;
 }
 
 interface BotState {
+  x: number; // posição viva (% do módulo) — fonte da verdade, não lida do style
+  y: number;
   dir: BotDir;
   flip: boolean;
   frame: number;
-  walkTimer: ReturnType<typeof setInterval> | null;
+}
+
+/** Movimento em curso, integrado pelo loop rAF (ADR-0012). */
+interface Move {
+  sx: number; sy: number; // origem (%)
+  tx: number; ty: number; // destino (%)
+  dist: number;           // distância total do trajeto (px reais)
+  T: number;              // duração total (ms)
+  ta: number;             // duração da rampa de aceleração (ms)
+  tCruise: number;        // duração do cruzeiro (ms)
+  tp: number;             // tempo até o pico (perfil triangular, ms)
+  vmax: number;           // velocidade de cruzeiro (px/ms)
+  accel: number;          // aceleração (px/ms²)
+  trap: boolean;          // true = trapézio; false = triângulo (move curto)
+  t0: number;             // performance.now() no início
+  sPrev: number;          // distância percorrida no frame anterior (px)
+  onArrive?: () => void;
 }
 
 /**
  * Uma sala da nave: bounds invisíveis + robô que perambula em rajadas (idle),
  * caminha até o console ao ser focado e entra em pose de trabalho durante a
- * missão. Lógica portada verbatim de _mockups/ship-render.html (refs imperativos).
+ * missão. Locomoção por loop rAF — cadência por distância, velocidade
+ * trapezoidal, posição em estado próprio (ADR-0012).
  */
 export function ShipRoom({
   agent,
@@ -39,6 +67,7 @@ export function ShipRoom({
   isWorking,
   onSelect,
   scale,
+  reaction,
 }: ShipRoomProps) {
   const moduleRef = useRef<HTMLDivElement>(null);
   const unitRef = useRef<HTMLDivElement>(null);
@@ -47,6 +76,17 @@ export function ShipRoom({
     startWorking: () => void;
     stopWorking: () => void;
   } | null>(null);
+
+  // Bolha de expressão (ADR-0013): null = pontinhos "..."; senão um emoji.
+  // Reações (evento) preemptam o sabor de idle por um tempo travado.
+  const [expr, setExpr] = useState<string | null>(null);
+  const exprCtrlRef = useRef<{ react: (emoji: string) => void } | null>(null);
+  const glyph = useMemo(
+    () => roleGlyph(agent.role, agent.slug),
+    [agent.role, agent.slug],
+  );
+  const glyphRef = useRef(glyph);
+  glyphRef.current = glyph;
 
   // estado vivo lido pelos timers: perambula quando NÃO está em missão.
   const workingRef = useRef(isWorking);
@@ -68,30 +108,76 @@ export function ShipRoom({
 
   // ===== máquina de estados (montada uma vez) =====
   useEffect(() => {
+    const module = moduleRef.current;
     const unit = unitRef.current;
     const bot = botRef.current;
-    if (!unit || !bot) return;
-    const st: BotState = { dir: "down", flip: false, frame: 0, walkTimer: null };
-    let wanderTimer: ReturnType<typeof setTimeout> | null = null;
-    let arriveTimer: ReturnType<typeof setTimeout> | null = null;
+    if (!module || !unit || !bot) return;
 
+    const st: BotState = { x: 50, y: 62, dir: "down", flip: false, frame: 0 };
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // tamanho do módulo em px reais — base da cadência/velocidade em pixels.
+    const size = { w: 1, h: 1 };
+    const measure = () => {
+      const r = module.getBoundingClientRect();
+      if (r.width) size.w = r.width;
+      if (r.height) size.h = r.height;
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(module);
+
+    let move: Move | null = null;
+    let raf: number | null = null;
+    let strideAcc = 0; // px percorridos desde o último avanço de frame
+    let wanderTimer: ReturnType<typeof setTimeout> | null = null;
+    let idleExprTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // ---- Bolha de expressão (ADR-0013) ----
+    // lockUntil: enquanto > now, uma Reação detém a bolha e o idle não a toca.
+    let exprLock = 0;
+    let exprRevert: ReturnType<typeof setTimeout> | null = null;
+    const showExpr = (emoji: string, ttl: number, isReaction: boolean) => {
+      const now = Date.now();
+      if (!isReaction && now < exprLock) return; // reação ainda manda
+      if (isReaction) exprLock = now + ttl;
+      if (exprRevert) clearTimeout(exprRevert);
+      setExpr(emoji);
+      exprRevert = setTimeout(() => {
+        setExpr(null);
+        exprRevert = null;
+      }, ttl);
+    };
+    // exposto ao effect de Reação (fora deste closure)
+    exprCtrlRef.current = {
+      react: (emoji) => showExpr(emoji, 1900, true),
+    };
+    // sabor de idle ocasional: glifo temático, "olhar em volta" ou cochilar.
+    const scheduleIdleExpr = () => {
+      idleExprTimer = setTimeout(
+        () => {
+          if (!workingRef.current && Date.now() >= exprLock) {
+            const roll = Math.random();
+            const emoji =
+              roll < 0.55 ? glyphRef.current : roll < 0.8 ? IDLE_LOOK : IDLE_DOZE;
+            showExpr(emoji, 2400, false);
+          }
+          scheduleIdleExpr();
+        },
+        5000 + Math.random() * 5000,
+      );
+    };
+
+    // ---- visuais do sprite ----
     const applyFlip = () => {
       bot.style.transform = `translate(-50%,-50%) scaleX(${st.dir === "side" && st.flip ? -1 : 1})`;
     };
     const setWalkCell = () => {
       bot.style.backgroundPosition = `${-st.frame * CELL}px ${-DIRIDX[st.dir] * CELL}px`;
     };
-    const startWalkAnim = () => {
-      if (st.walkTimer) return;
-      st.walkTimer = setInterval(() => {
-        st.frame = (st.frame + 1) % WALK_FRAMES;
-        setWalkCell();
-      }, FRAME_MS);
-    };
-    const stopWalkAnim = () => {
-      if (st.walkTimer) clearInterval(st.walkTimer);
-      st.walkTimer = null;
-      st.frame = 0;
+    const setUnitPos = () => {
+      unit.style.left = st.x + "%";
+      unit.style.top = st.y + "%";
     };
     const showWalk = () => {
       unit.classList.remove("idle");
@@ -101,10 +187,8 @@ export function ShipRoom({
       bot.style.backgroundSize = `${WALK_COLS * CELL}px ${WALK_ROWS * CELL}px`;
       applyFlip();
       setWalkCell();
-      startWalkAnim();
     };
     const showPose = (poseRow: number) => {
-      stopWalkAnim();
       bot.style.backgroundImage = `url(${POSE_SHEET})`;
       bot.style.width = POSE_CELL + "px";
       bot.style.height = POSE_CELL + "px";
@@ -121,70 +205,144 @@ export function ShipRoom({
       showPose(1);
     };
 
-    const moveUnit = (x: number, y: number, dur?: number) => {
-      const cx = parseFloat(unit.style.left) || 50;
-      const cy = parseFloat(unit.style.top) || 60;
-      const dx = x - cx, dy = y - cy;
-      if (Math.abs(dx) >= Math.abs(dy)) {
+    // ---- perfil de velocidade trapezoidal: distância percorrida em t ms ----
+    const distAt = (m: Move, t: number): number => {
+      if (t >= m.T) return m.dist;
+      if (t <= 0) return 0;
+      if (m.trap) {
+        const dAcc = 0.5 * m.vmax * m.ta;
+        if (t < m.ta) return 0.5 * m.accel * t * t;
+        if (t < m.ta + m.tCruise) return dAcc + m.vmax * (t - m.ta);
+        const td = t - m.ta - m.tCruise;
+        return dAcc + m.vmax * m.tCruise + m.vmax * td - 0.5 * m.accel * td * td;
+      }
+      // triangular (move curto demais para atingir cruzeiro)
+      if (t < m.tp) return 0.5 * m.accel * t * t;
+      const tr = m.T - t;
+      return m.dist - 0.5 * m.accel * tr * tr;
+    };
+
+    const cancelMove = () => {
+      move = null;
+      if (raf != null) cancelAnimationFrame(raf);
+      raf = null;
+      strideAcc = 0;
+    };
+
+    const frame = (now: number) => {
+      if (!move) { raf = null; return; }
+      const t = now - move.t0;
+      const s = distAt(move, t);
+      const frac = move.dist > 0 ? s / move.dist : 1;
+      st.x = move.sx + (move.tx - move.sx) * frac;
+      st.y = move.sy + (move.ty - move.sy) * frac;
+      setUnitPos();
+      // cadência por distância: avança o frame a cada STRIDE_PX percorridos
+      strideAcc += Math.max(0, s - move.sPrev);
+      move.sPrev = s;
+      while (strideAcc >= STRIDE_PX) {
+        st.frame = (st.frame + 1) % WALK_FRAMES;
+        strideAcc -= STRIDE_PX;
+      }
+      setWalkCell();
+      if (t >= move.T) {
+        st.x = move.tx; st.y = move.ty;
+        setUnitPos();
+        const cb = move.onArrive;
+        cancelMove();
+        // NÃO reseta st.frame: a passada continua de onde parou no próximo
+        // movimento → o ciclo de 6 frames aparece inteiro ao longo do tempo.
+        cb?.();
+        return;
+      }
+      raf = requestAnimationFrame(frame);
+    };
+
+    // inicia um deslocamento até (tx,ty) em % do módulo; origem = posição viva.
+    const startMove = (tx: number, ty: number, onArrive?: () => void) => {
+      const dxpx = ((tx - st.x) / 100) * size.w;
+      const dypx = ((ty - st.y) / 100) * size.h;
+      // direção pelo eixo dominante em PIXELS (módulo não é quadrado)
+      if (Math.abs(dxpx) >= Math.abs(dypx)) {
         st.dir = "side";
-        st.flip = dx > 0;
+        st.flip = dxpx > 0;
       } else {
-        st.dir = dy < 0 ? "up" : "down";
+        st.dir = dypx < 0 ? "up" : "down";
         st.flip = false;
       }
-      if (dur == null) {
-        const d = Math.hypot(dx, dy);
-        dur = Math.max(MIN_DUR, d / WALK_SPEED);
+      const dist = Math.hypot(dxpx, dypx);
+      if (reduce || dist < 0.5) {
+        // movimento reduzido ou trajeto desprezível: teleporta
+        st.x = tx; st.y = ty;
+        setUnitPos();
+        onArrive?.();
+        return;
       }
+      const vmax = SPEED_PX_S / 1000; // px/ms
+      const ta = ACCEL_MS;
+      const accel = vmax / ta;
+      const dAcc = 0.5 * vmax * ta;
+      let T: number, tCruise = 0, tp = 0, trap: boolean;
+      if (dist >= 2 * dAcc) {
+        trap = true;
+        tCruise = (dist - 2 * dAcc) / vmax;
+        T = 2 * ta + tCruise;
+      } else {
+        trap = false;
+        const vp = Math.sqrt(accel * dist);
+        tp = vp / accel;
+        T = 2 * tp;
+      }
+      cancelMove();
+      move = { sx: st.x, sy: st.y, tx, ty, dist, T, ta, tCruise, tp, vmax, accel, trap, t0: performance.now(), sPrev: 0, onArrive };
       showWalk();
-      unit.style.transition = `left ${dur}ms linear, top ${dur}ms linear`;
-      unit.style.left = x + "%";
-      unit.style.top = y + "%";
-      if (arriveTimer) clearTimeout(arriveTimer);
-      arriveTimer = setTimeout(() => {
-        if (!workingRef.current) showIdle();
-      }, dur);
-      return dur;
+      raf = requestAnimationFrame(frame);
     };
 
     const tick = () => {
-      if (!workingRef.current) {
+      if (!workingRef.current && !move) {
         const x = 18 + Math.random() * 64;
         const y = 42 + Math.random() * 40;
-        moveUnit(x, y);
+        startMove(x, y, () => { if (!workingRef.current) showIdle(); });
       }
       wanderTimer = setTimeout(tick, 2600 + Math.random() * 4200);
     };
 
-    // posição inicial + idle + começa a perambular
-    unit.style.left = "50%";
-    unit.style.top = "62%";
+    // posição inicial + idle + começa a perambular (exceto reduced-motion)
+    setUnitPos();
     showIdle();
-    wanderTimer = setTimeout(tick, 1200 + Math.random() * 2000);
+    if (!reduce) {
+      wanderTimer = setTimeout(tick, 1200 + Math.random() * 2000);
+      scheduleIdleExpr();
+    }
 
     // expõe a API para os effects reativos
     ctrlRef.current = {
       // missão começou: caminha até o console e entra em pose de trabalho
       startWorking: () => {
         const w = room.work;
-        const d = moveUnit(w.x, w.y);
-        if (arriveTimer) clearTimeout(arriveTimer);
-        arriveTimer = setTimeout(() => {
+        startMove(w.x, w.y, () => {
           st.dir = w.dir;
           st.flip = false;
           applyFlip();
           showWorking();
-        }, d + 20);
+        });
       },
-      // missão terminou: volta ao idle; o perambular reassume no próximo tick
-      stopWorking: () => showIdle(),
+      // missão terminou: para onde estiver e volta ao idle; o perambular reassume.
+      stopWorking: () => {
+        cancelMove();
+        showIdle();
+      },
     };
 
     return () => {
       if (wanderTimer) clearTimeout(wanderTimer);
-      if (arriveTimer) clearTimeout(arriveTimer);
-      stopWalkAnim();
+      if (idleExprTimer) clearTimeout(idleExprTimer);
+      if (exprRevert) clearTimeout(exprRevert);
+      cancelMove();
+      ro.disconnect();
       ctrlRef.current = null;
+      exprCtrlRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -194,6 +352,12 @@ export function ShipRoom({
     if (isWorking) ctrlRef.current?.startWorking();
     else ctrlRef.current?.stopWorking();
   }, [isWorking]);
+
+  // Reação (ADR-0013): o maestro manda um emoji por nonce → toca na bolha.
+  useEffect(() => {
+    if (reaction) exprCtrlRef.current?.react(reaction.emoji);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reaction?.nonce]);
 
   return (
     <div
@@ -219,13 +383,13 @@ export function ShipRoom({
       <div
         ref={unitRef}
         className="ship-unit idle"
+        // left/top são dirigidos imperativamente pelo loop rAF (não no inline,
+        // senão um re-render do React reverteria a posição). ADR-0012.
         style={{
           width: CELL,
           height: CELL,
           marginLeft: -CELL / 2,
           marginTop: -CELL / 2,
-          left: "50%",
-          top: "62%",
         }}
         onClick={(e) => {
           e.stopPropagation();
@@ -233,15 +397,24 @@ export function ShipRoom({
         }}
       >
         <span className="ship-label">{agent.name}</span>
-        <div className="ship-thought">
-          <i />
-          <i />
-          <i />
+        {/* Bolha de expressão: emoji (Reação/sabor) ou os pontinhos de idle. */}
+        <div className={`ship-thought ${expr ? "expr" : ""}`}>
+          {expr ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="ship-emoji" src={twemojiUrl(expr)} alt="" draggable={false} />
+          ) : (
+            <>
+              <i />
+              <i />
+              <i />
+            </>
+          )}
         </div>
         <div
           className="ship-bot-wrap"
           style={{ "--bot-scale": scale } as React.CSSProperties}
         >
+          <div className="ship-shadow" />
           <div ref={botRef} className="ship-bot" />
         </div>
       </div>

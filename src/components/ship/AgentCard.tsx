@@ -36,7 +36,7 @@ export function AgentCard({ agent, open, onClose }: AgentCardProps) {
           animate={{ opacity: 1, x: 0, scale: 1 }}
           exit={{ opacity: 0, x: 24, scale: 0.96 }}
           transition={{ duration: 0.25, ease: "easeOut" }}
-          className="absolute right-2 top-2 z-30 w-64 overflow-hidden rounded-lg border bg-void/95 backdrop-blur-sm"
+          className="absolute right-2 top-2 z-30 w-64 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg border bg-void/95 backdrop-blur-sm"
           style={{ borderColor: accent, boxShadow: `0 0 22px ${accent}55` }}
         >
           {/* retrato (zoom do rosto do sprite) */}

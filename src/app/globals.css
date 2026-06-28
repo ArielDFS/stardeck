@@ -125,10 +125,17 @@ body {
 }
 
 /* a nave (render real como fundo) */
+/* o convés é um container de tamanho → a Nave dimensiona por cqw/cqh (ADR-0014) */
+.ship-stage {
+  container-type: size;
+}
 .ship-bg {
   position: relative;
   isolation: isolate;
   animation: ship-fade 1s ease-out both;
+  /* escala-pra-caber sem distorcer: o menor entre encher a largura e a altura */
+  aspect-ratio: 1536 / 1024;
+  width: min(100cqw, calc(100cqh * 1536 / 1024));
 }
 /* casco neutro (ADR-0010): o render é uma camada própria, levemente
    dessaturada, para a cor de cada sala vir 100% por código (.ship-roomglow)
@@ -191,14 +198,17 @@ body {
 .ship-unit {
   position: absolute;
   cursor: pointer;
-  transition: left 1s linear, top 1s linear;
+  /* posição dirigida frame-a-frame pelo loop rAF (ADR-0012); sem transição CSS. */
   z-index: 2;
 }
 .ship-unit.idle {
-  animation: ship-breathe 3.2s ease-in-out infinite;
+  animation: ship-breathe 3s ease-in-out infinite;
 }
 @keyframes ship-breathe {
-  50% { transform: translateY(-1.5px); }
+  50% { transform: translateY(-2.2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ship-unit.idle { animation: none; }
 }
 
 .ship-label {
@@ -256,6 +266,27 @@ body {
   opacity: 1;
   transform: scale(1);
 }
+/* bolha com emoji (Reação/sabor) — visível mesmo fora do idle (ADR-0013) */
+.ship-thought.expr {
+  opacity: 1;
+  transform: scale(1);
+  padding: 2px;
+  animation: ship-pop 0.34s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+@keyframes ship-pop {
+  0% { transform: scale(0.4); }
+  70% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+.ship-emoji {
+  display: block;
+  width: 15px;
+  height: 15px;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 55%, transparent));
+}
+@media (prefers-reduced-motion: reduce) {
+  .ship-thought.expr { animation: none; }
+}
 .ship-thought i {
   width: 3px;
   height: 3px;
@@ -306,15 +337,49 @@ body {
   transform-origin: center;
 }
 
+/* sombra de contato no chão — segue o robô e dá peso/grounding (ADR-0013) */
+.ship-shadow {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 15px);
+  width: 28px;
+  height: 8px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.5) 0%,
+    rgba(0, 0, 0, 0.3) 45%,
+    transparent 72%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
 /* o robô (sprite) */
 .ship-bot {
   position: absolute;
   left: 50%;
   top: 50%;
+  z-index: 1; /* acima da sombra de contato */
   background-repeat: no-repeat;
   image-rendering: auto;
   filter: hue-rotate(var(--hue)) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6));
   transform: translate(-50%, -50%) scaleX(1);
+}
+/* pulso sutil do visor no idle (só quando NÃO focado — focado usa botpulse) */
+.ship-module:not(.focused) .ship-unit.idle .ship-bot {
+  animation: ship-visor 3.6s ease-in-out infinite;
+}
+@keyframes ship-visor {
+  50% {
+    filter: hue-rotate(var(--hue)) brightness(1.12)
+      drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 55%, transparent))
+      drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ship-module:not(.focused) .ship-unit.idle .ship-bot { animation: none; }
 }
 .ship-unit:hover .ship-bot {
   filter: hue-rotate(var(--hue)) drop-shadow(0 0 4px var(--accent))

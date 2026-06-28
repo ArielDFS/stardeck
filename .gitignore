@@ -34,3 +34,8 @@ next-env.d.ts
 public/ship/*.raw.png
 public/ship/*.full.png
 /_mockups/
+
+# contexto interno do projeto (mantido localmente, fora do repo público)
+/CLAUDE.md
+/public/ship/ASSETS.md
+/public/ship/cosmetics/
