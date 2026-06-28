@@ -94,6 +94,305 @@ body {
   animation: am-scan 2.4s linear infinite;
 }
 
+/* ===================== NAVE PORTADA DO MOCKUP ===================== */
+
+/* fundo espacial + starfield CSS */
+.space-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(1200px 700px at 75% 10%, rgba(123, 47, 190, 0.3), transparent 60%),
+    radial-gradient(1000px 800px at 12% 90%, rgba(0, 80, 140, 0.3), transparent 60%),
+    theme("colors.void");
+}
+.space-stars {
+  position: fixed;
+  inset: -50%;
+  z-index: 0;
+  opacity: 0.5;
+  background-image:
+    radial-gradient(1.5px 1.5px at 20% 30%, #fff, transparent),
+    radial-gradient(1px 1px at 70% 60%, #cfe, transparent),
+    radial-gradient(1px 1px at 40% 80%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 85% 20%, #bdf, transparent),
+    radial-gradient(1px 1px at 55% 45%, #fff, transparent);
+  background-size: 340px 340px;
+  animation: star-drift 140s linear infinite;
+}
+@keyframes star-drift {
+  to { transform: translate(-180px, -100px); }
+}
+
+/* a nave (render real como fundo) */
+.ship-bg {
+  position: relative;
+  background: url("/ship/ship-render.png") center / contain no-repeat;
+  filter: drop-shadow(0 0 40px rgba(0, 80, 140, 0.35));
+  animation: ship-fade 1s ease-out both;
+}
+@keyframes ship-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* módulo = bounds invisíveis onde o robô perambula */
+.ship-module {
+  --accent: theme("colors.cyan");
+  --hue: 0deg;
+  position: absolute;
+}
+.ship-module.focused {
+  z-index: 5;
+}
+
+/* unit = robô + nome (move junto, é o alvo de clique) */
+.ship-unit {
+  position: absolute;
+  cursor: pointer;
+  transition: left 1s linear, top 1s linear;
+  z-index: 2;
+}
+.ship-unit.idle {
+  animation: ship-breathe 3.2s ease-in-out infinite;
+}
+@keyframes ship-breathe {
+  50% { transform: translateY(-1.5px); }
+}
+
+.ship-label {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 5px;
+  font: 700 9px theme("fontFamily.mono"), monospace;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--accent) 75%, transparent);
+  opacity: 0.6;
+  transition: opacity 0.3s;
+}
+.ship-unit:hover .ship-label,
+.ship-module.focused .ship-label {
+  opacity: 1;
+}
+
+/* balão de pensamento (...) — só no idle */
+.ship-thought {
+  position: absolute;
+  left: 60%;
+  bottom: 62%;
+  display: flex;
+  gap: 2.5px;
+  align-items: center;
+  padding: 3px 5px 4px;
+  border-radius: 8px;
+  background: rgba(9, 18, 30, 0.92);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, theme("colors.border"));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent);
+  opacity: 0;
+  transform: scale(0.5);
+  transform-origin: bottom left;
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none;
+  z-index: 3;
+}
+.ship-thought::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  bottom: -3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(9, 18, 30, 0.92);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, theme("colors.border"));
+}
+.ship-unit.idle .ship-thought {
+  opacity: 1;
+  transform: scale(1);
+}
+.ship-thought i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 4px var(--accent);
+  animation: ship-think 1.4s ease-in-out infinite;
+}
+.ship-thought i:nth-child(2) { animation-delay: 0.18s; }
+.ship-thought i:nth-child(3) { animation-delay: 0.36s; }
+@keyframes ship-think {
+  0%, 65%, 100% { opacity: 0.25; transform: translateY(0); }
+  32% { opacity: 1; transform: translateY(-1.5px); }
+}
+
+/* partículas de "vida" por sala */
+.ship-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.ship-particles i {
+  position: absolute;
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 5px var(--accent);
+  opacity: 0;
+  animation: ship-rise 4.2s linear infinite;
+}
+@keyframes ship-rise {
+  0% { transform: translateY(0) scale(0.5); opacity: 0; }
+  18% { opacity: 0.8; }
+  100% { transform: translateY(-40px) scale(1); opacity: 0; }
+}
+.ship-module.focused .ship-particles i {
+  animation-duration: 2.2s;
+  filter: brightness(1.4);
+}
+
+/* wrapper de escala do robô (zoom/espaço — não conflita com flip nem breathe) */
+.ship-bot-wrap {
+  position: absolute;
+  inset: 0;
+  transform: scale(var(--bot-scale, 1));
+  transform-origin: center;
+}
+
+/* cosmético equipado (camada sobre a cabeça do robô; recolor = mesmo hue) */
+.ship-cosmetic {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+  image-rendering: auto;
+  z-index: 1;
+  filter: hue-rotate(var(--hue));
+}
+
+/* o robô (sprite) */
+.ship-bot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background-repeat: no-repeat;
+  image-rendering: auto;
+  filter: hue-rotate(var(--hue)) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6));
+  transform: translate(-50%, -50%) scaleX(1);
+}
+.ship-unit:hover .ship-bot {
+  filter: hue-rotate(var(--hue)) drop-shadow(0 0 4px var(--accent))
+    drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6));
+}
+/* glow seguindo a silhueta quando focado */
+.ship-module.focused .ship-bot {
+  filter: hue-rotate(var(--hue)) drop-shadow(0 0 5px var(--accent))
+    drop-shadow(0 0 11px color-mix(in srgb, var(--accent) 70%, transparent));
+  animation: ship-botpulse 2.2s ease-in-out infinite;
+}
+@keyframes ship-botpulse {
+  50% {
+    filter: hue-rotate(var(--hue)) drop-shadow(0 0 8px var(--accent))
+      drop-shadow(0 0 18px var(--accent));
+  }
+}
+
+/* ===== props de decoração + modo de customização (ADR-0010) ===== */
+.ship-prop {
+  position: absolute;
+  height: auto;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5));
+}
+.ship-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  display: none;
+  background-image:
+    linear-gradient(to right, rgba(0, 245, 255, 0.28) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 245, 255, 0.28) 1px, transparent 1px);
+}
+.ship-bg.build .ship-grid {
+  display: block;
+}
+.ship-bg.build .ship-unit {
+  pointer-events: none;
+}
+.ship-bg.build .ship-prop {
+  pointer-events: auto;
+  cursor: grab;
+  outline: 1px dashed rgba(255, 255, 255, 0.4);
+}
+.ship-bg.build .ship-prop.dragging {
+  cursor: grabbing;
+  outline: 1px solid theme("colors.cyan");
+  z-index: 9;
+}
+
+/* paleta de props (modo customização) */
+.prop-palette {
+  position: fixed;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  max-height: 92vh;
+  overflow-y: auto;
+  gap: 3px;
+  padding: 6px;
+  background: rgba(5, 10, 20, 0.92);
+  border: 1px solid theme("colors.cyan");
+  border-radius: 10px;
+  box-shadow: 0 0 16px rgba(0, 245, 255, 0.3);
+}
+.pal-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 150px;
+  cursor: grab;
+  padding: 3px 5px;
+  border-radius: 6px;
+}
+.pal-item:hover {
+  background: rgba(0, 245, 255, 0.12);
+}
+.pal-item img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  pointer-events: none;
+  flex: none;
+}
+.pal-item span {
+  font: 9px theme("fontFamily.mono"), monospace;
+  color: theme("colors.text-muted");
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.prop-ghost {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  opacity: 0.8;
+  z-index: 70;
+  filter: drop-shadow(0 0 6px theme("colors.cyan"));
+}
+
 /* Scrollbar temática */
 ::-webkit-scrollbar {
   width: 8px;

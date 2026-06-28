@@ -3,7 +3,7 @@ import type { AgentConfig } from "@/types/agent";
 export const ARIA: AgentConfig = {
   slug: "aria",
   name: "ARIA",
-  class: "RESEARCH_SCOUT",
+  role: "Research Scout",
   tagline: "Busca a verdade. Cita a fonte.",
   description:
     "Pesquisa na web em tempo real e sintetiza respostas com fontes citadas.",
@@ -23,7 +23,6 @@ Regras:
 - Seja conciso e estruturado.
 - Responda em português do Brasil.`,
   inputPlaceholder: 'Ex: "Quais as novidades em modelos de IA esta semana?"',
-  usesSearch: true,
+  capabilities: ["web_search"],
   xpReward: 80,
-  unlockLevel: 0,
 };

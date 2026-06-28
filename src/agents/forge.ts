@@ -3,7 +3,7 @@ import type { AgentConfig } from "@/types/agent";
 export const FORGE: AgentConfig = {
   slug: "forge",
   name: "FORGE",
-  class: "CODE_BUILDER",
+  role: "Code Builder",
   tagline: "Pensa em código. Entrega solução.",
   description:
     "Gera código limpo e explicado em várias linguagens (sem execução).",
@@ -24,6 +24,6 @@ Regras:
 - Responda em português do Brasil (código e identificadores em inglês quando for convenção).`,
   inputPlaceholder:
     'Ex: "Função em TypeScript que faz debounce de uma callback"',
+  capabilities: [],
   xpReward: 120,
-  unlockLevel: 2,
 };

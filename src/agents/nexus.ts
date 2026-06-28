@@ -3,7 +3,7 @@ import type { AgentConfig } from "@/types/agent";
 export const NEXUS: AgentConfig = {
   slug: "nexus",
   name: "NEXUS",
-  class: "SQL_ANALYST",
+  role: "SQL Analyst",
   tagline: "Fala SQL. Pensa em dados.",
   description:
     "Transforma linguagem natural em queries SQL precisas e eficientes.",
@@ -30,6 +30,6 @@ Formato de resposta:
 4. Variações ou melhorias opcionais`,
   inputPlaceholder:
     'Ex: "Liste os 10 produtos mais vendidos por categoria no último mês"',
+  capabilities: [],
   xpReward: 100,
-  unlockLevel: 0,
 };

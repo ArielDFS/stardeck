@@ -10,29 +10,51 @@ import { tavilySearch, buildSearchContext } from "@/lib/search/tavily";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/** Config resolvida do agente enviada pelo cliente (ADR-0010 #8). */
+interface AgentOverride {
+  systemPrompt?: string;
+  model?: { host: string; premium?: string; prefer?: "host" | "premium" };
+  capabilities?: string[];
+}
+
 interface RunBody {
   input?: string;
   /** Chave OpenRouter do visitante (BYOK) — destrava o modelo premium. */
   apiKey?: string;
-  usePremium?: boolean;
+  /** Config da instância de Agente (prompt/modelo/capacidades editados). */
+  agent?: AgentOverride;
 }
+
+const MAX_PROMPT = 8000;
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params;
-  const agent = getAgent(slug);
-
-  if (!agent) {
-    return Response.json({ error: "Agente não encontrado." }, { status: 404 });
-  }
 
   let body: RunBody;
   try {
     body = (await req.json()) as RunBody;
   } catch {
     return Response.json({ error: "Corpo inválido." }, { status: 400 });
+  }
+
+  // Resolve a config: prioriza a override do cliente; cai no Blueprint por slug.
+  const blueprint = getAgent(slug);
+  const ov = body.agent;
+  const systemPrompt = (ov?.systemPrompt ?? blueprint?.systemPrompt ?? "").slice(
+    0,
+    MAX_PROMPT,
+  );
+  const model = ov?.model ?? blueprint?.model;
+  const capabilities = ov?.capabilities ?? blueprint?.capabilities ?? [];
+
+  if (!model?.host) {
+    return Response.json(
+      { error: "Agente sem configuração de modelo." },
+      { status: 400 },
+    );
   }
 
   const input = body.input?.trim();
@@ -43,13 +65,13 @@ export async function POST(
     );
   }
 
+  // Roteamento de modelo (ADR-0010 #8): premium só com BYOK; senão cai pro host.
   const byokKey = body.apiKey?.trim();
-  const wantsPremium = Boolean(
-    body.usePremium && byokKey && agent.model.premium,
-  );
+  const prefersPremium = model.prefer === "premium" && Boolean(model.premium);
+  const usePremium = prefersPremium && Boolean(byokKey);
 
   const geminiKey = process.env.GEMINI_API_KEY;
-  if (!wantsPremium && !geminiKey) {
+  if (!usePremium && !geminiKey) {
     return Response.json(
       {
         error:
@@ -63,9 +85,19 @@ export async function POST(
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        // Ferramenta de busca da ARIA (e qualquer agente com usesSearch).
+        // Aviso: preferiu premium mas não há BYOK → usando o host.
+        if (prefersPremium && !byokKey) {
+          emit(controller, {
+            type: "step",
+            id: "model",
+            label: "Modelo premium requer BYOK — usando host (Gemini)",
+            status: "done",
+          });
+        }
+
+        // Ferramenta de busca (capacidade web_search — ex.: ARIA).
         let userMessage = input;
-        if (agent.usesSearch) {
+        if (capabilities.includes("web_search")) {
           const tavilyKey = process.env.TAVILY_API_KEY;
           if (tavilyKey) {
             emit(controller, {
@@ -107,12 +139,12 @@ export async function POST(
         let modelUsed: string;
         let extractor: DeltaExtractor;
 
-        if (wantsPremium) {
+        if (usePremium) {
           const messages: ChatMessage[] = [
-            { role: "system", content: agent.systemPrompt },
+            { role: "system", content: systemPrompt },
             { role: "user", content: userMessage },
           ];
-          modelUsed = agent.model.premium!;
+          modelUsed = model.premium!;
           extractor = openRouterDelta;
           upstream = await streamChatCompletion({
             model: modelUsed,
@@ -121,11 +153,11 @@ export async function POST(
             signal: req.signal,
           });
         } else {
-          modelUsed = agent.model.host;
+          modelUsed = model.host;
           extractor = geminiDelta;
           upstream = await streamGemini({
             model: modelUsed,
-            systemPrompt: agent.systemPrompt,
+            systemPrompt,
             userMessage,
             apiKey: geminiKey!,
             signal: req.signal,

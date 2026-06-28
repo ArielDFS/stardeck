@@ -3,7 +3,7 @@ import type { AgentConfig } from "@/types/agent";
 export const PHANTOM: AgentConfig = {
   slug: "phantom",
   name: "PHANTOM",
-  class: "SUMMARIZER",
+  role: "Summarizer",
   tagline: "Muito texto entra. A essência sai.",
   description:
     "Condensa textos longos em resumos claros, com pontos-chave e takeaways.",
@@ -21,6 +21,6 @@ Regras:
 - Mantenha o tom e a intenção do original.
 - Responda em português do Brasil.`,
   inputPlaceholder: "Cole o texto que deseja resumir...",
+  capabilities: [],
   xpReward: 60,
-  unlockLevel: 1,
 };

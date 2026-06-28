@@ -3,7 +3,7 @@ import type { AgentConfig } from "@/types/agent";
 export const ECHO: AgentConfig = {
   slug: "echo",
   name: "ECHO",
-  class: "REPORT_WRITER",
+  role: "Report Writer",
   tagline: "Dados viram narrativa.",
   description:
     "Escreve relatórios, e-mails e documentos profissionais bem estruturados.",
@@ -23,6 +23,6 @@ Regras:
 - Responda em português do Brasil.`,
   inputPlaceholder:
     'Ex: "Escreva um relatório executivo sobre os resultados do Q2"',
+  capabilities: [],
   xpReward: 150,
-  unlockLevel: 1,
 };

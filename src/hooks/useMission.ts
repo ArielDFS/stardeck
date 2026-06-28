@@ -3,9 +3,19 @@
 import { useCallback, useRef, useState } from "react";
 import type { MissionEvent, MissionStatus, MissionStep } from "@/types/mission";
 
+/** Config da instância de Agente enviada ao servidor (ADR-0010 #8). */
+interface AgentRunConfig {
+  systemPrompt: string;
+  model: { host: string; premium?: string; prefer?: "host" | "premium" };
+  capabilities: string[];
+}
+
 interface RunOptions {
   apiKey?: string;
-  usePremium?: boolean;
+  /** Config editada do agente (prompt/modelo/capacidades) — vale no servidor. */
+  agent?: AgentRunConfig;
+  /** Chamado quando a missão conclui com sucesso (evento `done`). */
+  onComplete?: (result: { durationMs: number; modelUsed: string | null }) => void;
 }
 
 interface UseMissionState {
@@ -77,14 +87,17 @@ export function useMission() {
               return { ...s, steps };
             });
             break;
-          case "done":
+          case "done": {
+            const durationMs = Math.round(performance.now() - startedAt);
             setState((s) => ({
               ...s,
               status: "COMPLETED",
               modelUsed: e.modelUsed ?? s.modelUsed,
-              durationMs: Math.round(performance.now() - startedAt),
+              durationMs,
             }));
+            options.onComplete?.({ durationMs, modelUsed: e.modelUsed ?? null });
             break;
+          }
           case "error":
             setState((s) => ({ ...s, status: "ERROR", error: e.message }));
             break;
@@ -95,7 +108,11 @@ export function useMission() {
         const res = await fetch(`/api/agents/${agentSlug}/run`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: trimmed, ...options }),
+          body: JSON.stringify({
+            input: trimmed,
+            apiKey: options.apiKey,
+            agent: options.agent,
+          }),
           signal: controller.signal,
         });
 
