@@ -35,6 +35,7 @@ export function ShipView() {
   const recordMission = useProfileStore((s) => s.recordMission);
   const xp = useProfileStore((s) => s.xp);
   const byokKey = useSettingsStore((s) => s.byokKey);
+  const geminiKey = useSettingsStore((s) => s.geminiKey);
   const hydrated = useHydrated();
   const mission = useMission();
   const [reward, setReward] = useState<ToastReward | null>(null);
@@ -278,6 +279,7 @@ export function ShipView() {
             onLaunch={(input) =>
               mission.run(focusedAgent.slug, input, {
                 apiKey: byokKey || undefined,
+                geminiKey: geminiKey || undefined,
                 agent: {
                   systemPrompt: focusedAgent.systemPrompt,
                   model: focusedAgent.model,

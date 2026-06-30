@@ -11,7 +11,7 @@ import { hueRotateDeg } from "@/lib/ship/recolor";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { AgentEditor } from "@/components/ship/AgentEditor";
 import { TopHUD } from "./TopHUD";
-import { ByokKey } from "./ByokKey";
+import { ApiKeys } from "./ApiKeys";
 
 interface ManifestoProps {
   /** Slug do agente rodando a missão real agora (ou null) — Atividade ao vivo. */
@@ -311,7 +311,7 @@ export function Manifesto({ workingSlug }: ManifestoProps) {
                     </button>
                   )}
 
-                  <ByokKey placement="up" />
+                  <ApiKeys placement="up" />
                 </div>
               </>
             )}

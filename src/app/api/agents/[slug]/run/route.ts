@@ -22,8 +22,10 @@ interface AgentOverride {
 
 interface RunBody {
   input?: string;
-  /** Chave OpenRouter do visitante (BYOK) — destrava o modelo premium. */
+  /** Chave OpenRouter do visitante (BYOK premium) — destrava o modelo premium. */
   apiKey?: string;
+  /** Chave Gemini do visitante (chave de host) — roda o base na cota dele (ADR-0015). */
+  geminiKey?: string;
   /** Config da instância de Agente (prompt/modelo/capacidades editados). */
   agent?: AgentOverride;
 }
@@ -73,12 +75,17 @@ export async function POST(
   const prefersPremium = model.prefer === "premium" && Boolean(model.premium);
   const usePremium = prefersPremium && Boolean(byokKey);
 
-  const geminiKey = process.env.GEMINI_API_KEY;
+  // Caminho host (Gemini): a chave do Visitante tem precedência sobre a do host
+  // (ADR-0015). Só "usando a chave do host" toca a carteira do dono.
+  const visitorGeminiKey = body.geminiKey?.trim();
+  const geminiKey = visitorGeminiKey || process.env.GEMINI_API_KEY;
+  const usingHostKey = !usePremium && !visitorGeminiKey;
+
   if (!usePremium && !geminiKey) {
     return Response.json(
       {
         error:
-          "Nenhuma API key disponível. Configure GEMINI_API_KEY no servidor ou forneça a sua chave OpenRouter (BYOK) para o modelo premium.",
+          "Nenhuma API key disponível. Configure GEMINI_API_KEY no servidor, cole a sua chave Gemini, ou forneça a sua chave OpenRouter (BYOK) para o modelo premium.",
       },
       { status: 503 },
     );
@@ -95,12 +102,13 @@ export async function POST(
       { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
     );
   }
-  // 2) Kill-switch de orçamento — só o host conta (premium é BYOK do visitante).
-  if (!usePremium && !budgetOk()) {
+  // 2) Kill-switch de orçamento — só a chave do host conta (chave Gemini ou
+  //    OpenRouter do Visitante é a carteira dele — isenta, ADR-0015).
+  if (usingHostKey && !budgetOk()) {
     return Response.json(
       {
         error:
-          "O orçamento diário do demo foi atingido. Cole sua própria chave OpenRouter (BYOK) e selecione o modelo premium para continuar.",
+          "O orçamento diário do demo foi atingido. Cole a sua chave Gemini (uso na sua cota) ou a sua chave OpenRouter (modelo premium) para continuar.",
       },
       { status: 503 },
     );
@@ -205,8 +213,9 @@ export async function POST(
           emit(controller, { type: "token", text });
         });
 
-        // Contabiliza o gasto do host no orçamento diário (premium não conta).
-        if (!usePremium) {
+        // Contabiliza o gasto no orçamento diário só quando é a chave do host
+        // (chave do Visitante — Gemini ou premium — é a cota dele, ADR-0015).
+        if (usingHostKey) {
           recordSpend(
             estimateCostUsd(systemPrompt.length + userMessage.length, outputChars),
           );

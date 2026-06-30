@@ -11,7 +11,10 @@ interface AgentRunConfig {
 }
 
 interface RunOptions {
+  /** Chave OpenRouter do Visitante (BYOK premium). */
   apiKey?: string;
+  /** Chave Gemini do Visitante (chave de host — roda o base na cota dele, ADR-0015). */
+  geminiKey?: string;
   /** Config editada do agente (prompt/modelo/capacidades) — vale no servidor. */
   agent?: AgentRunConfig;
   /** Chamado quando a missão conclui com sucesso (evento `done`). */
@@ -111,6 +114,7 @@ export function useMission() {
           body: JSON.stringify({
             input: trimmed,
             apiKey: options.apiKey,
+            geminiKey: options.geminiKey,
             agent: options.agent,
           }),
           signal: controller.signal,
