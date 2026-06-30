@@ -4,8 +4,7 @@
 
 **Gamified AI Agent Crew** · por Ariel Ferreira (AFS Intelligence) · `Next.js 15` · `TypeScript`
 
-<!-- 🔗 Demo ao vivo: https://stardeck.vercel.app  (atualize após o deploy) -->
-> 🔗 **Demo ao vivo:** _link adicionado após o deploy na Vercel_
+> 🔗 **Demo ao vivo:** **[stardeck-theta.vercel.app](https://stardeck-theta.vercel.app)**
 
 <!-- 📸 Adicione um GIF/screenshot da nave aqui: ![STARDECK](docs/demo.gif) -->
 
@@ -24,7 +23,7 @@ STARDECK apresenta agentes de IA como **personagens de uma nave** (vista top-dow
 - **Monte sua tripulação** — crie, edite e apague agentes (nome, cor, função, prompt, capacidades e modelo). Os 5 presets são só o ponto de partida.
 - **Gamificação local** — XP, níveis e progressão por missão, tudo em `localStorage` (sem login).
 - **Nave viva** — robôs caminham, perambulam e **reagem com emoji** ao foco, ao level-up e ao fim de missão; locomoção fluida por loop `requestAnimationFrame` + sombra de contato.
-- **BYOK opcional** — cole sua chave para destravar modelos premium (Claude). O host roda em tier grátis (Gemini).
+- **BYOK opcional** — cole sua chave **OpenRouter** para destravar modelos premium (Claude), ou sua chave **Gemini** para rodar o modelo base na sua própria cota (sem o limite de teste do host). O demo roda em tier grátis (Gemini) por padrão.
 - **Proteção de custo** — rate-limit por IP + kill-switch de orçamento no servidor.
 - **Responsivo** e com `prefers-reduced-motion`.
 
